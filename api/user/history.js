@@ -1,4 +1,3 @@
-import { kv } from '@vercel/kv';
 import jwt from 'jsonwebtoken';
 
 /**
@@ -34,6 +33,10 @@ export default async function handler(req, res) {
     if (isNaN(limit) || limit <= 0 || isNaN(cursor) || cursor < 0) {
       return res.status(400).json({ code: 'INVALID_QUERY', message: 'Invalid cursor or limit' });
     }
+
+    // Dynamic import to avoid top-level import errors
+    const { kv } = await import('@vercel/kv');
+
     const indexKey = `analysis_index:${userId}`;
     // Get the range of analysis IDs for the requested page.
     const analysisIds = await kv.lrange(indexKey, cursor, cursor + limit - 1);

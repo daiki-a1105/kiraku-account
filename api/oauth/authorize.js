@@ -1,4 +1,3 @@
-import { kv } from '@vercel/kv';
 import { randomBytes } from 'crypto';
 
 /**
@@ -33,6 +32,9 @@ export default async function handler(req, res) {
     if (!state) {
       return res.status(400).json({ code: 'INVALID_STATE', message: 'Missing state parameter.' });
     }
+
+    // Dynamic import to avoid top-level import errors
+    const { kv } = await import('@vercel/kv');
 
     // Create a relay state and persist it so we can look it up during the GitHub callback.
     const relayState = randomBytes(16).toString('hex');

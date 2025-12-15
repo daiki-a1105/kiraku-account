@@ -1,6 +1,1 @@
-{
-  "rewrites": [
-    { "source": "/user/:path*", "destination": "/api/user/:path*" },
-    { "source": "/oauth/:path*", "destination": "/api/oauth/:path*" }
-  ]
-}
+{"functions":{"api/**/*.js":{"runtime":"nodejs18.x"}},"rewrites":[{"source":"/user/:path*","destination":"/api/user/:path*"},{"source":"/oauth/:path*","destination":"/api/oauth/:path*"}]}

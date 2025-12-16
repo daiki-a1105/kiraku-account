@@ -1,4 +1,5 @@
 import { randomBytes } from 'crypto';
+import { getBaseUrl } from '../_utils.js';
 
 /**
  * OAuth authorize endpoint
@@ -46,11 +47,14 @@ export default async function handler(req, res) {
     // Store the relay data with a TTL of 600 seconds (10 minutes).
     await kv.set(`relay:${relayState}`, JSON.stringify(relayData), { ex: 600 });
 
+    // Get base URL with fallback chain
+    const baseUrl = getBaseUrl(req);
+
     // Construct the GitHub authorization URL.  The redirect_uri passed to GitHub
     // points back to the github/callback endpoint on this project.
     const githubAuthUrl = new URL('https://github.com/login/oauth/authorize');
     githubAuthUrl.searchParams.set('client_id', process.env.GITHUB_CLIENT_ID);
-    githubAuthUrl.searchParams.set('redirect_uri', `${process.env.BASE_URL}/api/oauth/github/callback`);
+    githubAuthUrl.searchParams.set('redirect_uri', `${baseUrl}/api/oauth/github/callback`);
     githubAuthUrl.searchParams.set('state', relayState);
     githubAuthUrl.searchParams.set('scope', 'read:user');
 
@@ -59,6 +63,6 @@ export default async function handler(req, res) {
     return res.status(302).end();
   } catch (err) {
     console.error('authorize error:', err);
-    return res.status(500).json({ code: 'INTERNAL_ERROR', message: err.message, stack: err.stack });
+    return res.status(500).json({ code: 'INTERNAL_ERROR', message: err.message });
   }
 }

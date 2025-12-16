@@ -1,4 +1,5 @@
 import { randomBytes } from 'crypto';
+import { getBaseUrl, parseKvValue } from '../../_utils.js';
 
 /**
  * GitHub OAuth callback
@@ -31,8 +32,16 @@ export default async function handler(req, res) {
       return res.status(400).json({ code: 'INVALID_STATE', message: 'Invalid or expired state.' });
     }
     await kv.del(relayKey);
-    const relayData = JSON.parse(relayRaw);
+
+    // Safe parse - handle both string and object
+    const relayData = parseKvValue(relayRaw);
+    if (!relayData || !relayData.chatgptState || !relayData.redirectUri) {
+      return res.status(400).json({ code: 'INVALID_STATE', message: 'Malformed relay data.' });
+    }
     const { chatgptState, redirectUri } = relayData;
+
+    // Get base URL with fallback chain
+    const baseUrl = getBaseUrl(req);
 
     // Exchange the GitHub code for an access token.
     const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
@@ -45,7 +54,7 @@ export default async function handler(req, res) {
         client_id: process.env.GITHUB_CLIENT_ID,
         client_secret: process.env.GITHUB_CLIENT_SECRET,
         code,
-        redirect_uri: `${process.env.BASE_URL}/api/oauth/github/callback`,
+        redirect_uri: `${baseUrl}/api/oauth/github/callback`,
       }),
     });
     const tokenData = await tokenRes.json();
@@ -53,6 +62,7 @@ export default async function handler(req, res) {
     if (!githubAccessToken) {
       return res.status(400).json({ code: 'TOKEN_EXCHANGE_FAILED', message: 'Failed to obtain GitHub access token.' });
     }
+
     // Fetch the GitHub user profile.
     const userRes = await fetch('https://api.github.com/user', {
       headers: {
@@ -66,6 +76,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ code: 'INVALID_USER', message: 'Failed to retrieve GitHub user information.' });
     }
     const userId = String(userData.id);
+
     // Issue a temporary code for ChatGPT to exchange later.
     const chatgptCode = randomBytes(16).toString('hex');
     const codeData = {
@@ -73,6 +84,7 @@ export default async function handler(req, res) {
       issuedAt: Date.now(),
     };
     await kv.set(`chatgpt_code:${chatgptCode}`, JSON.stringify(codeData), { ex: 600 });
+
     // Redirect back to ChatGPT's redirect URI with the code and original state.
     const redirectUrl = new URL(redirectUri);
     redirectUrl.searchParams.set('code', chatgptCode);
@@ -81,6 +93,6 @@ export default async function handler(req, res) {
     return res.status(302).end();
   } catch (err) {
     console.error('callback error:', err);
-    return res.status(500).json({ code: 'INTERNAL_ERROR', message: err.message, stack: err.stack });
+    return res.status(500).json({ code: 'INTERNAL_ERROR', message: err.message });
   }
 }

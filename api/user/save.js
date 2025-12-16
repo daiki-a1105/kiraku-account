@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
+import { readRequestBody } from '../_utils.js';
 
 /**
  * Save analysis endpoint
@@ -29,13 +30,19 @@ export default async function handler(req, res) {
     }
     const userId = claims.sub;
     const plan = claims.plan || 'free';
-    // Parse body
+
+    // Parse body with compatibility
     let payload;
     try {
-      payload = await req.json();
+      payload = await readRequestBody(req);
     } catch (err) {
-      return res.status(400).json({ code: 'INVALID_REQUEST', message: 'Malformed JSON' });
+      return res.status(400).json({ code: 'INVALID_REQUEST', message: 'Unable to parse request body' });
     }
+
+    if (!payload || typeof payload !== 'object') {
+      return res.status(400).json({ code: 'INVALID_REQUEST', message: 'Request body required' });
+    }
+
     const { decision, pros, cons, diff_threshold = 10, top_n = 3, low_confidence_threshold = 2 } = payload;
     if (!decision || !decision.statement || !Array.isArray(pros) || !Array.isArray(cons)) {
       return res.status(400).json({ code: 'INVALID_REQUEST', message: 'decision, pros, and cons are required' });
@@ -49,7 +56,9 @@ export default async function handler(req, res) {
       const now = new Date();
       const period = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
       const usageKey = `usage:${userId}:${period}`;
-      const usage = (await kv.get(usageKey)) || 0;
+      const usageRaw = await kv.get(usageKey);
+      // Safe parse - usage is a number
+      const usage = typeof usageRaw === 'number' ? usageRaw : (parseInt(usageRaw, 10) || 0);
       const monthlyLimit = 10;
       if (usage >= monthlyLimit) {
         return res.status(429).json({ code: 'PLAN_LIMIT', message: 'Monthly save limit reached' });
@@ -57,6 +66,7 @@ export default async function handler(req, res) {
       // Increment usage in KV
       await kv.set(usageKey, usage + 1, { ex: 60 * 60 * 24 * 31 });
     }
+
     // Compute weighted scores
     const scoreItems = (list, side) => list.map(item => {
       const importance = Number(item.importance);
@@ -69,6 +79,7 @@ export default async function handler(req, res) {
     const proTotal = prosScored.reduce((sum, item) => sum + item.weighted, 0);
     const conTotal = consScored.reduce((sum, item) => sum + item.weighted, 0);
     const diff = Math.abs(proTotal - conTotal);
+
     // Merge and sort to find top items
     const allItems = [...prosScored, ...consScored];
     allItems.sort((a, b) => b.weighted - a.weighted);
@@ -93,6 +104,7 @@ export default async function handler(req, res) {
       con_total: conTotal,
       diff,
     };
+
     // Build record
     const analysisId = payload.analysis_id || randomUUID();
     const nowTs = Date.now();
@@ -119,6 +131,7 @@ export default async function handler(req, res) {
       summary: payload.summary || null,
       meta: payload.meta || null,
     };
+
     // Persist to KV
     const keyMain = `analysis:${userId}:${analysisId}`;
     const keyIndex = `analysis_index:${userId}`;
@@ -129,9 +142,10 @@ export default async function handler(req, res) {
     // Truncate list to a maximum number of items (plan dependent)
     const maxItems = plan === 'free' ? 50 : 1000;
     await kv.ltrim(keyIndex, 0, maxItems - 1);
+
     return res.status(200).json(record);
   } catch (err) {
     console.error('save error:', err);
-    return res.status(500).json({ code: 'INTERNAL_ERROR', message: err.message, stack: err.stack });
+    return res.status(500).json({ code: 'INTERNAL_ERROR', message: err.message });
   }
 }

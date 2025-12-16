@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { parseKvValue } from '../_utils.js';
 
 /**
  * History endpoint
@@ -25,6 +26,7 @@ export default async function handler(req, res) {
       return res.status(401).json({ code: 'UNAUTHORIZED', message: 'Invalid token' });
     }
     const userId = claims.sub;
+
     // Parse query params
     const limitParam = req.query.limit;
     const cursorParam = req.query.cursor;
@@ -44,7 +46,11 @@ export default async function handler(req, res) {
     for (const analysisId of analysisIds) {
       const recordRaw = await kv.get(`analysis:${userId}:${analysisId}`);
       if (!recordRaw) continue;
-      const record = JSON.parse(recordRaw);
+
+      // Safe parse - handle both string and object
+      const record = parseKvValue(recordRaw);
+      if (!record) continue;
+
       items.push({
         analysis_id: record.analysis_id,
         title: record.title || record.decision?.statement || '',
@@ -57,6 +63,7 @@ export default async function handler(req, res) {
         top1_label: record.scoring?.top_items?.[0]?.label || '',
       });
     }
+
     // Determine the next cursor
     let nextCursor = null;
     if (analysisIds.length === limit) {
@@ -65,6 +72,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ items, next_cursor: nextCursor });
   } catch (err) {
     console.error('history error:', err);
-    return res.status(500).json({ code: 'INTERNAL_ERROR', message: err.message, stack: err.stack });
+    return res.status(500).json({ code: 'INTERNAL_ERROR', message: err.message });
   }
 }

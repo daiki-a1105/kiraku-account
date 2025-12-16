@@ -1,1 +1,6 @@
-{"functions":{"api/**/*.js":{"runtime":"nodejs20.x"}},"rewrites":[{"source":"/user/:path*","destination":"/api/user/:path*"},{"source":"/oauth/:path*","destination":"/api/oauth/:path*"}]}
+{
+  "rewrites": [
+    { "source": "/user/:path*", "destination": "/api/user/:path*" },
+    { "source": "/oauth/:path*", "destination": "/api/oauth/:path*" }
+  ]
+}

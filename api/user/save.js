@@ -10,6 +10,9 @@ import { readRequestBody } from '../_utils.js';
  * decision gate, enforces plan limits (monthly save count and retention),
  * then stores the record in KV with an index for history lookups.  The
  * response returns the stored record with server‑computed fields.
+ *
+ * Requires Authorization: Bearer <access_token> header.
+ * Refresh tokens are NOT accepted (401).
  */
 export default async function handler(req, res) {
   try {
@@ -28,7 +31,17 @@ export default async function handler(req, res) {
     } catch (err) {
       return res.status(401).json({ code: 'UNAUTHORIZED', message: 'Invalid token' });
     }
+
+    // SECURITY: Reject refresh tokens - only access tokens allowed
+    const tokenType = claims.type || claims.token_use;
+    if (tokenType === 'refresh') {
+      return res.status(401).json({ code: 'UNAUTHORIZED', message: 'Access token required' });
+    }
+
     const userId = claims.sub;
+    if (!userId) {
+      return res.status(401).json({ code: 'UNAUTHORIZED', message: 'Invalid token' });
+    }
     const plan = claims.plan || 'free';
 
     // Parse body with compatibility
@@ -146,6 +159,6 @@ export default async function handler(req, res) {
     return res.status(200).json(record);
   } catch (err) {
     console.error('save error:', err);
-    return res.status(500).json({ code: 'INTERNAL_ERROR', message: err.message });
+    return res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An internal error occurred' });
   }
 }

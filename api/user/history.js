@@ -8,6 +8,9 @@ import { parseKvValue } from '../_utils.js';
  * includes minimal fields necessary to display an overview.  Pagination
  * is implemented using a cursor (offset) and limit.  The cursor is a
  * numeric offset into the list of analysis IDs stored in KV.
+ *
+ * Requires Authorization: Bearer <access_token> header.
+ * Refresh tokens are NOT accepted (401).
  */
 export default async function handler(req, res) {
   try {
@@ -25,7 +28,17 @@ export default async function handler(req, res) {
     } catch (err) {
       return res.status(401).json({ code: 'UNAUTHORIZED', message: 'Invalid token' });
     }
+
+    // SECURITY: Reject refresh tokens - only access tokens allowed
+    const tokenType = claims.type || claims.token_use;
+    if (tokenType === 'refresh') {
+      return res.status(401).json({ code: 'UNAUTHORIZED', message: 'Access token required' });
+    }
+
     const userId = claims.sub;
+    if (!userId) {
+      return res.status(401).json({ code: 'UNAUTHORIZED', message: 'Invalid token' });
+    }
 
     // Parse query params
     const limitParam = req.query.limit;
@@ -72,6 +85,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ items, next_cursor: nextCursor });
   } catch (err) {
     console.error('history error:', err);
-    return res.status(500).json({ code: 'INTERNAL_ERROR', message: err.message });
+    return res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An internal error occurred' });
   }
 }

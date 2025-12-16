@@ -11,6 +11,10 @@ import { readRequestBody, parseKvValue } from '../_utils.js';
  * Supported grant_type:
  *   - authorization_code: Exchange code for tokens
  *   - refresh_token: Get new access token using refresh token
+ *
+ * Token claims:
+ *   - access_token: { sub, plan, type: 'access' }
+ *   - refresh_token: { sub, type: 'refresh' }
  */
 export default async function handler(req, res) {
   try {
@@ -60,10 +64,12 @@ export default async function handler(req, res) {
 
       const userId = codeData.userId;
 
-      // Build tokens
-      const payload = { sub: userId, plan: 'free' };
-      const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: 60 * 60 }); // 1 hour
-      const newRefreshToken = jwt.sign({ sub: userId, type: 'refresh' }, process.env.JWT_SECRET, { expiresIn: 60 * 60 * 24 * 30 }); // 30 days
+      // Build tokens with explicit type claims
+      const accessPayload = { sub: userId, plan: 'free', type: 'access' };
+      const refreshPayload = { sub: userId, type: 'refresh' };
+
+      const accessToken = jwt.sign(accessPayload, process.env.JWT_SECRET, { expiresIn: 60 * 60 }); // 1 hour
+      const newRefreshToken = jwt.sign(refreshPayload, process.env.JWT_SECRET, { expiresIn: 60 * 60 * 24 * 30 }); // 30 days
 
       return res.status(200).json({
         access_token: accessToken,
@@ -86,12 +92,26 @@ export default async function handler(req, res) {
         return res.status(400).json({ code: 'INVALID_GRANT', message: 'Invalid or expired refresh token' });
       }
 
+      // SECURITY: Validate this is actually a refresh token, not an access token
+      // Accept both 'type' and 'token_use' for compatibility
+      const tokenType = claims.type || claims.token_use;
+      if (tokenType !== 'refresh') {
+        return res.status(400).json({ code: 'INVALID_GRANT', message: 'Invalid or expired refresh token' });
+      }
+
+      // Validate sub exists
+      if (!claims.sub) {
+        return res.status(400).json({ code: 'INVALID_GRANT', message: 'Invalid or expired refresh token' });
+      }
+
       const userId = claims.sub;
 
-      // Issue new tokens
-      const payload = { sub: userId, plan: 'free' };
-      const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: 60 * 60 }); // 1 hour
-      const newRefreshToken = jwt.sign({ sub: userId, type: 'refresh' }, process.env.JWT_SECRET, { expiresIn: 60 * 60 * 24 * 30 }); // 30 days
+      // Issue new tokens with explicit type claims
+      const accessPayload = { sub: userId, plan: 'free', type: 'access' };
+      const refreshPayload = { sub: userId, type: 'refresh' };
+
+      const accessToken = jwt.sign(accessPayload, process.env.JWT_SECRET, { expiresIn: 60 * 60 }); // 1 hour
+      const newRefreshToken = jwt.sign(refreshPayload, process.env.JWT_SECRET, { expiresIn: 60 * 60 * 24 * 30 }); // 30 days
 
       return res.status(200).json({
         access_token: accessToken,
@@ -106,6 +126,6 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error('token error:', err);
-    return res.status(500).json({ code: 'INTERNAL_ERROR', message: err.message });
+    return res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An internal error occurred' });
   }
 }

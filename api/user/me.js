@@ -4,7 +4,8 @@ import jwt from 'jsonwebtoken';
  * Get current user info endpoint
  *
  * Returns the authenticated user's profile including plan info and usage.
- * Requires Authorization: Bearer <token> header.
+ * Requires Authorization: Bearer <access_token> header.
+ * Refresh tokens are NOT accepted (401).
  */
 export default async function handler(req, res) {
   try {
@@ -26,7 +27,18 @@ export default async function handler(req, res) {
       return res.status(401).json({ code: 'UNAUTHORIZED', message: 'Invalid token' });
     }
 
+    // SECURITY: Reject refresh tokens - only access tokens allowed
+    // Accept both 'type' and 'token_use' for compatibility
+    const tokenType = claims.type || claims.token_use;
+    if (tokenType === 'refresh') {
+      return res.status(401).json({ code: 'UNAUTHORIZED', message: 'Access token required' });
+    }
+
     const userId = claims.sub;
+    if (!userId) {
+      return res.status(401).json({ code: 'UNAUTHORIZED', message: 'Invalid token' });
+    }
+
     const plan = claims.plan || 'free';
 
     // Get current month usage from KV
@@ -51,6 +63,6 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error('me error:', err);
-    return res.status(500).json({ code: 'INTERNAL_ERROR', message: err.message });
+    return res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An internal error occurred' });
   }
 }
